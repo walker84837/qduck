@@ -1,0 +1,16 @@
+{
+    "command": {
+        "alias": ["command", "cmd", "shell", "sh"],
+        "prompt": ""
+    },
+
+    "code": {
+        "alias": ["code"],
+        "prompt": ""
+    },
+
+    "summary": {
+        "alias": ["sum", "summarize", "summary"],
+        "prompt": ""
+    }
+}
