@@ -1,11 +1,32 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"strings"
 )
+
+// initial information sent by duck.ai
+type ChatInformation struct {
+	Role    string `json:"role"`
+	Message string `json:"message"`
+	Created int    `json:"created"`
+	Id      string `json:"id"`
+	Action  string `json:"action"`
+	Model   string `json:"model"`
+}
+
+// actual message fragments from duck.ai
+type MessageFragment struct {
+	Message string `json:"message"`
+	Created int    `json:"created"`
+	Id      string `json:"id"`
+	Action  string `json:"action"`
+	Model   string `json:"model"`
+}
 
 func getvqd() string {
 	req, err := http.NewRequest("GET", "https://duckduckgo.com/duckchat/v1/status", nil)
@@ -33,19 +54,17 @@ func getvqd() string {
 	return vqd
 }
 
-func prompt(input string) interface{} {
+func prompt(input string) string {
 	var vqd string = getvqd()
 
 	bodystring := `{"model": "gpt-4o-mini", "messages": [{"role": "user","content": "%s"}]}`
-
 	formattedstring := fmt.Sprintf(bodystring, input)
-
 	jsondata := []byte(formattedstring)
 
 	req, err := http.NewRequest("POST", "https://duckduckgo.com/duckchat/v1/chat", bytes.NewBuffer(jsondata))
-
 	if err != nil {
-		fmt.Println(fmt.Sprintf("HANDLE ERROR: %s", err))
+		fmt.Printf("HANDLE ERROR: %s\n", err)
+		return ""
 	}
 
 	req.Header.Set("X-Vqd-4", vqd)
@@ -56,26 +75,55 @@ func prompt(input string) interface{} {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := http.Client{}
-
 	resp, err := client.Do(req)
-
 	if err != nil {
-		fmt.Println(fmt.Sprintf("HANDLE ERROR: %s", err))
+		fmt.Printf("HANDLE ERROR: %s\n", err)
+		return ""
 	}
-
 	defer resp.Body.Close()
 
-	byteslop, err := io.ReadAll(resp.Body)
+	var responseBuilder strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
 
-	if err != nil {
-		fmt.Println(fmt.Sprintf("HANDLE ERROR: %s", err))
+	lineNumber := 0
+	var line string
+	for scanner.Scan() {
+		// first line seems to look like chat information
+		lineNumber++
+		if lineNumber == 1 {
+			info := scanner.Text()
+
+			var chatinfo ChatInformation
+			json.Unmarshal([]byte(info), &chatinfo)
+			fmt.Printf("Chat Information: %s\n", info)
+		}
+
+		line = scanner.Text()
+
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		jsonData := line[6:]
+
+		// everything after this prefix is message fragments and valid json
+		var frag MessageFragment
+		err := json.Unmarshal([]byte(jsonData), &frag)
+		if err != nil {
+			continue
+		}
+
+		// add the message fragment to the final response from ai
+		responseBuilder.WriteString(frag.Message)
 	}
 
-	aislop := string(byteslop)
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading stream: %v\n", err)
+	}
 
-	return aislop
+	return responseBuilder.String()
 }
 
 func main() {
-	fmt.Println(prompt("If you see this tell me LETS GOOOO"))
+	fmt.Println(prompt("write an hello world program in go"))
 }
