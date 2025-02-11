@@ -28,11 +28,16 @@ type MessageFragment struct {
 	Model   string `json:"model"`
 }
 
-func getvqd() string {
+type Args struct {
+	Prompt string
+	Model  string
+}
+
+func getVqdToken() (string, error) {
 	req, err := http.NewRequest("GET", "https://duckduckgo.com/duckchat/v1/status", nil)
 
 	if err != nil {
-		fmt.Println(fmt.Sprintf("HANDLE ERROR: %s", err))
+		return "", fmt.Errorf("failed to make a new HTTP request: %s", err)
 	}
 
 	req.Header.Set("X-Vqd-Accept", "1")
@@ -44,18 +49,18 @@ func getvqd() string {
 	resp, err := client.Do(req)
 
 	if err != nil {
-		fmt.Println(fmt.Sprintf("HANDLE ERROR: %s", err))
+		return "", fmt.Errorf("failed to act on request: %s", err)
 	}
 
 	defer resp.Body.Close()
 
 	vqd := resp.Header.Get("x-vqd-4")
 
-	return vqd
+	return vqd, nil
 }
 
-func prompt(input string) string {
-	var vqd string = getvqd()
+func prompt(input string) (string, error) {
+	var vqd string = getVqdToken()
 
 	bodystring := `{"model": "gpt-4o-mini", "messages": [{"role": "user","content": "%s"}]}`
 	formattedstring := fmt.Sprintf(bodystring, input)
@@ -63,8 +68,7 @@ func prompt(input string) string {
 
 	req, err := http.NewRequest("POST", "https://duckduckgo.com/duckchat/v1/chat", bytes.NewBuffer(jsondata))
 	if err != nil {
-		fmt.Printf("HANDLE ERROR: %s\n", err)
-		return ""
+		return "", fmt.Errorf("HANDLE ERROR: %s", err)
 	}
 
 	req.Header.Set("X-Vqd-4", vqd)
@@ -77,8 +81,7 @@ func prompt(input string) string {
 	client := http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("HANDLE ERROR: %s\n", err)
-		return ""
+		return "", fmt.Errorf("HANDLE ERROR: %s", err)		
 	}
 	defer resp.Body.Close()
 
@@ -118,12 +121,12 @@ func prompt(input string) string {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading stream: %v\n", err)
+		return "", fmt.Errorf("Error reading stream: %v", err)
 	}
 
-	return responseBuilder.String()
+	return responseBuilder.String(), nil
 }
 
 func main() {
-	fmt.Println(prompt("write an hello world program in go"))
+
 }
