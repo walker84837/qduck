@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"strings"
@@ -59,11 +60,14 @@ func getVqdToken() (string, error) {
 	return vqd, nil
 }
 
-func prompt(input string) (string, error) {
-	var vqd string = getVqdToken()
+func prompt(input, model string) (string, error) {
+	vqd, err := getVqdToken()
+	if err != nil {
+		return "", fmt.Errorf("HANDLE ERROR: %s", err)
+	}
 
-	bodystring := `{"model": "gpt-4o-mini", "messages": [{"role": "user","content": "%s"}]}`
-	formattedstring := fmt.Sprintf(bodystring, input)
+	bodystring := `{"model": "%s", "messages": [{"role": "user","content": "%s"}]}`
+	formattedstring := fmt.Sprintf(bodystring, model, input)
 	jsondata := []byte(formattedstring)
 
 	req, err := http.NewRequest("POST", "https://duckduckgo.com/duckchat/v1/chat", bytes.NewBuffer(jsondata))
@@ -81,7 +85,7 @@ func prompt(input string) (string, error) {
 	client := http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("HANDLE ERROR: %s", err)		
+		return "", fmt.Errorf("HANDLE ERROR: %s", err)
 	}
 	defer resp.Body.Close()
 
@@ -128,5 +132,37 @@ func prompt(input string) (string, error) {
 }
 
 func main() {
+	// Key-value list of abbreviated names and API names for models
+	models := map[string]string{
+		"gpt-4o-mini": "gpt-4o-mini",
+		"o3-mini":     "o3-mini",
+		"llama-3.3":   "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+		"claude-3":    "claude-3-haiku-20240307",
+		"mixtral":     "mistralai/Mixtral-8x7B-Instruct-v0.1",
+	}
 
+	var args Args
+	flag.StringVar(&args.Model, "model", "gpt-4o-mini", "Model to use for prompt. Available models are: gpt-4o-mini, o3-mini, llama-3.3, claude-3, mixtral)")
+	flag.StringVar(&args.Prompt, "prompt", "", "Prompt to send to model")
+	flag.Parse()
+
+	if args.Prompt == "" {
+		if len(flag.Args()) > 0 {
+			args.Prompt = flag.Args()[0]
+		} else {
+			fmt.Println("Please provide a prompt either via the -prompt flag or as the first positional argument.")
+			return
+		}
+	}
+
+	// TODO: check if model is actually valid. this can cause an error in the API if the module does not exist
+	fmt.Printf("Sending response to model %s\n", args.Model)
+	response, err := prompt(args.Prompt, models[args.Model])
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println(response)
 }
