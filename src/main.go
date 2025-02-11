@@ -142,7 +142,7 @@ func main() {
 	}
 
 	var args Args
-	flag.StringVar(&args.Model, "model", "gpt-4o-mini", "Model to use for prompt. Available models are: gpt-4o-mini, o3-mini, llama-3.3, claude-3, mixtral)")
+	flag.StringVar(&args.Model, "model", "gpt-4o-mini", "Model to use for prompt. Available models are: gpt-4o-mini, o3-mini, llama-3.3, claude-3, mixtral")
 	flag.StringVar(&args.Prompt, "prompt", "", "Prompt to send to model")
 	flag.Parse()
 
@@ -155,7 +155,8 @@ func main() {
 		}
 	}
 
-	// TODO: check if model is actually valid. this can cause an error in the API if the module does not exist
+	// TODO: check if model is actually valid. this can cause an error
+	// in the API if the model does not exist
 	fmt.Printf("Sending response to model %s\n", args.Model)
 	response, err := prompt(args.Prompt, models[args.Model])
 
