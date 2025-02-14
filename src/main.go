@@ -6,15 +6,20 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
+	"time"
+
+	"github.com/AlecAivazis/survey/v2"
 )
 
 // initial information sent by duck.ai
 type ChatInformation struct {
 	Role    string `json:"role"`
 	Message string `json:"message"`
-	Created int    `json:"created"`
+	Created int64  `json:"created"`
 	Id      string `json:"id"`
 	Action  string `json:"action"`
 	Model   string `json:"model"`
@@ -23,16 +28,19 @@ type ChatInformation struct {
 // actual message fragments from duck.ai
 type MessageFragment struct {
 	Message string `json:"message"`
-	Created int    `json:"created"`
+	Created int64  `json:"created"`
 	Id      string `json:"id"`
 	Action  string `json:"action"`
 	Model   string `json:"model"`
 }
 
 type Args struct {
-	Prompt string
-	Model  string
+	Prompt      string
+	Model       string
+	Interactive bool
 }
+
+var logger = log.New(os.Stderr, "[qduck] ", log.Lshortfile|log.LUTC|log.Ltime|log.Lmicroseconds|log.Ldate)
 
 func getVqdToken() (string, error) {
 	req, err := http.NewRequest("GET", "https://duckduckgo.com/duckchat/v1/status", nil)
@@ -47,6 +55,7 @@ func getVqdToken() (string, error) {
 
 	client := &http.Client{}
 
+	logger.Println("Getting VQD token from duck.ai")
 	resp, err := client.Do(req)
 
 	if err != nil {
@@ -83,6 +92,8 @@ func prompt(input, model string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := http.Client{}
+
+	logger.Println("Sending prompt to duck.ai")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("HANDLE ERROR: %s", err)
@@ -97,12 +108,18 @@ func prompt(input, model string) (string, error) {
 	for scanner.Scan() {
 		// first line seems to look like chat information
 		lineNumber++
+
 		if lineNumber == 1 {
 			info := scanner.Text()
 
-			var chatinfo ChatInformation
-			json.Unmarshal([]byte(info), &chatinfo)
-			fmt.Printf("Chat Information: %s\n", info)
+			var chatInfo ChatInformation
+			if err := json.Unmarshal([]byte(stripJsonEventStreamPrefix(info)), &chatInfo); err != nil {
+				logger.Printf("Failed to unmarshal chat information: %v\n", err)
+			}
+			// convert localtime unix timestamp to UTC RFC3339 time
+			var parsedUnixTime = time.Unix(chatInfo.Created, 0).UTC().Format(time.RFC3339)
+			var logMessage = `Chat information: using model %s, created at %s, with id %s, as %s`
+			logger.Printf(logMessage, chatInfo.Model, parsedUnixTime, chatInfo.Id, chatInfo.Role)
 		}
 
 		line = scanner.Text()
@@ -115,8 +132,7 @@ func prompt(input, model string) (string, error) {
 
 		// everything after this prefix is message fragments and valid json
 		var frag MessageFragment
-		err := json.Unmarshal([]byte(jsonData), &frag)
-		if err != nil {
+		if err := json.Unmarshal([]byte(jsonData), &frag); err != nil {
 			continue
 		}
 
@@ -129,6 +145,10 @@ func prompt(input, model string) (string, error) {
 	}
 
 	return responseBuilder.String(), nil
+}
+
+func stripJsonEventStreamPrefix(input string) string {
+	return strings.TrimPrefix(input, "data: ")
 }
 
 func main() {
@@ -144,19 +164,25 @@ func main() {
 	var args Args
 	flag.StringVar(&args.Model, "model", "gpt-4o-mini", "Model to use for prompt. Available models are: gpt-4o-mini, o3-mini, llama-3.3, claude-3, mixtral")
 	flag.StringVar(&args.Prompt, "prompt", "", "Prompt to send to model")
+	flag.BoolVar(&args.Interactive, "int", false, "Enable interative mode")
 	flag.Parse()
 
-	if args.Prompt == "" {
-		if len(flag.Args()) > 0 {
-			args.Prompt = flag.Args()[0]
-		} else {
-			fmt.Println("Please provide a prompt either via the -prompt flag or as the first positional argument.")
+	if args.Interactive {
+		handleInteractiveMode(&args, models)
+	} else {
+		err := handleCliMode(&args)
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
 	}
 
-	// TODO: check if model is actually valid. this can cause an error
-	// in the API if the model does not exist
+	// Check if the selected model is valid
+	if _, ok := models[args.Model]; !ok {
+		fmt.Println("Invalid model selected.")
+		return
+	}
+
 	fmt.Printf("Sending response to model %s\n", args.Model)
 	response, err := prompt(args.Prompt, models[args.Model])
 
@@ -166,4 +192,35 @@ func main() {
 	}
 
 	fmt.Println(response)
+}
+
+func handleInteractiveMode(args *Args, models map[string]string) {
+	var modelOptions []string
+	for key := range models {
+		modelOptions = append(modelOptions, key)
+	}
+
+	modelPrompt := &survey.Select{
+		Message: "Choose a model:",
+		Options: modelOptions,
+	}
+	survey.AskOne(modelPrompt, &args.Model)
+
+	promptPrompt := &survey.Input{
+		Message: "Enter your prompt:",
+	}
+
+	survey.AskOne(promptPrompt, &args.Prompt)
+}
+
+func handleCliMode(args *Args) error {
+	if args.Prompt == "" {
+		if len(flag.Args()) > 0 {
+			args.Prompt = flag.Args()[0]
+		} else {
+			return fmt.Errorf("Please provide a prompt either via the -prompt flag or as the first positional argument.")
+		}
+	}
+
+	return nil
 }
