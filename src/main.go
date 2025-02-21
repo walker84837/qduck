@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,8 +76,8 @@ func prompt(input, model string) (string, error) {
 		return "", fmt.Errorf("HANDLE ERROR: %s", err)
 	}
 
-	bodystring := `{"model": "%s", "messages": [{"role": "user","content": "%s"}]}`
-	formattedstring := fmt.Sprintf(bodystring, model, input)
+	bodystring := `{"model": "%s", "messages": [{"role": "user","content": %s}]}`
+	formattedstring := fmt.Sprintf(bodystring, model, strconv.Quote(input))
 	jsondata := []byte(formattedstring)
 
 	req, err := http.NewRequest("POST", "https://duckduckgo.com/duckchat/v1/chat", bytes.NewBuffer(jsondata))
@@ -154,11 +155,12 @@ func stripJsonEventStreamPrefix(input string) string {
 func main() {
 	// Key-value list of abbreviated names and API names for models
 	models := map[string]string{
-		"gpt-4o-mini": "gpt-4o-mini",
-		"o3-mini":     "o3-mini",
-		"llama-3.3":   "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-		"claude-3":    "claude-3-haiku-20240307",
-		"mixtral":     "mistralai/Mixtral-8x7B-Instruct-v0.1",
+		"gpt-4o-mini":   "gpt-4o-mini",
+		"o3-mini":       "o3-mini",
+		"llama-3.3":     "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+		"claude-3":      "claude-3-haiku-20240307",
+		"mixtral":       "mistralai/Mixtral-8x7B-Instruct-v0.1",
+		"mistral-small": "mistralai/Mistral-Small-24B-Instruct-2501",
 	}
 
 	var args Args
